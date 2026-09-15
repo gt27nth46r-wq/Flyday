@@ -1,0 +1,18 @@
+{
+  "name": "flyday-server",
+  "version": "1.0.0",
+  "description": "Flyday - 7 day go/no-go outlook for single engine VFR pilots",
+  "type": "module",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "dotenv": "^16.4.5"
+  }
+}
