@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flyday — 7 day VFR outlook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="panel-glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">✈</span>
+      <span class="brand-name">Flyday</span>
+    </div>
+    <p class="brand-tagline">A 7-day go / no-go outlook for single-engine VFR flying</p>
+  </header>
+
+  <main>
+    <section class="search-row">
+      <form id="search-form" autocomplete="off">
+        <label for="icao">Airport identifier</label>
+        <input id="icao" name="icao" placeholder="KPAO" maxlength="5" required />
+        <button type="submit">Get outlook</button>
+        <button type="button" id="favorite-btn" class="secondary" title="Save this airport">☆ Save</button>
+      </form>
+    </section>
+
+    <div id="favorites" class="favorites hidden" aria-label="Saved airports"></div>
+
+    <details class="thresholds-panel">
+      <summary>Thresholds &amp; runway</summary>
+      <div class="thresholds">
+        <label>
+          Wind under
+          <input id="wind-threshold" type="number" min="1" max="40" value="10" />
+          kt
+        </label>
+        <label>
+          Pressure at/above
+          <input id="pressure-threshold" type="number" min="980" max="1050" value="1020" />
+          hPa
+        </label>
+        <label>
+          Ceiling at/above
+          <input id="ceiling-threshold" type="number" min="500" max="10000" step="500" value="3000" />
+          ft
+        </label>
+        <label>
+          Visibility at/above
+          <input id="visibility-threshold" type="number" min="1" max="10" value="5" />
+          sm
+        </label>
+        <label>
+          Flag pressure falling faster than
+          <input id="pressure-fall-threshold" type="number" min="-10" max="0" value="-3" />
+          hPa/3h
+        </label>
+        <label>
+          Flag gradient tighter than
+          <input id="gradient-threshold" type="number" min="1" max="20" value="6" />
+          hPa/100km
+        </label>
+        <label>
+          Runway heading(s)
+          <input id="runway-heading" type="text" placeholder="e.g. 13/31" />
+        </label>
+        <label>
+          Personal crosswind limit
+          <input id="crosswind-limit" type="number" min="1" max="40" value="15" />
+          kt
+        </label>
+      </div>
+      <p class="hint">Runway heading is used only in your browser, to estimate crosswind and check wind alignment from the forecast wind - it's never sent to the server. Note: forecast wind direction is true north and runway numbers are magnetic, so estimates can be off by however much local magnetic variation is at your airport.</p>
+    </details>
+
+    <p id="status" class="status" role="status"></p>
+
+    <section id="current" class="current hidden">
+      <div class="current-head">
+        <h2 id="station-name">—</h2>
+        <span id="station-meta" class="mono"></span>
+      </div>
+      <div id="metar-row" class="metar-row"></div>
+      <p id="taf-raw" class="mono taf-raw"></p>
+    </section>
+
+    <section id="days" class="days hidden" aria-label="7 day outlook"></section>
+
+    <details class="route-panel">
+      <summary>Compare a route</summary>
+      <form id="route-form" autocomplete="off">
+        <label for="route-icaos">Airports along your route</label>
+        <input id="route-icaos" placeholder="KPAO, KWVI, KMRY" />
+        <button type="submit">Compare</button>
+      </form>
+      <p id="route-status" class="status" role="status"></p>
+      <div id="route-matrix" class="route-matrix hidden"></div>
+    </details>
+
+    <details class="trip-panel">
+      <summary>Plan a specific trip</summary>
+      <form id="trip-form" autocomplete="off">
+        <div class="trip-row">
+          <label for="trip-departure">Departure</label>
+          <input id="trip-departure" placeholder="KPAO" maxlength="5" />
+        </div>
+        <div class="trip-row">
+          <label for="trip-arrival">Arrival</label>
+          <input id="trip-arrival" placeholder="KMRY" maxlength="5" />
+        </div>
+        <div class="trip-row">
+          <label for="trip-day">Day</label>
+          <select id="trip-day"></select>
+        </div>
+        <div class="trip-row">
+          <label for="trip-time">Time</label>
+          <select id="trip-time"></select>
+        </div>
+        <button type="submit">Check trip</button>
+      </form>
+      <p class="hint">Times are each airport's own local time - a departure and arrival airport in different time zones each show their own clock, not a flight-duration estimate.</p>
+      <p id="trip-status" class="status" role="status"></p>
+      <div id="trip-result" class="trip-result hidden"></div>
+    </details>
+
+    <section class="legend">
+      <h3>How a day (and each hour) gets rated</h3>
+      <p>Flyday scores each hour and day against a checklist modeled on a standard GA "good flying weather" reference — surface wind, gust spread, crosswind, visibility, ceiling, dew point spread, pressure pattern, precipitation, TAF trend, and convection. Each item is Green, Yellow, or Red; the overall rating is the worst item that Flyday actually has data for.</p>
+      <ul>
+        <li><span class="dot good"></span> <strong>Good</strong> — every checked item is Green</li>
+        <li><span class="dot marginal"></span> <strong>Marginal</strong> — at least one item is Yellow, none Red</li>
+        <li><span class="dot bad"></span> <strong>Bad</strong> — at least one item is Red (includes wind more than 15° off your runway, if you've entered one)</li>
+        <li><span class="dot unknown"></span> <strong>Unknown</strong> — no checked items had data yet (rare, usually day 7)</li>
+      </ul>
+      <p>Expand "Full checklist" on any day for the item-by-item breakdown. A few checklist rows — fronts, cloud type/vertical development, turbulence, PIREP ride reports, general icing aloft, and winds aloft — are shown as <strong>N/A</strong>: there's no free real-time data source Flyday can reach for those, so it says so rather than guessing. Check those separately in a full preflight briefing.</p>
+      <p class="disclaimer">
+        Flyday is a planning aid built on the NWS 7-day gridpoint forecast (pressure, wind, ceiling,
+        visibility, temperature, dew point, ice accumulation, and a nearby gridpoint used to estimate
+        pressure gradient) and aviationweather.gov METAR/TAF (current conditions, near-term flight
+        category). The gradient reading is a proxy, not a hand-analyzed surface chart. It is not a
+        substitute for an official preflight weather briefing — always check current METARs, TAFs,
+        AIRMETs/SIGMETs, PIREPs, and NOTAMs before you fly.
+      </p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
