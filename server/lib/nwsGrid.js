@@ -1,0 +1,141 @@
+import { HttpError } from "./geo.js";
+
+// NWS gridpoint values look like:
+//   { validTime: "2026-09-14T18:00:00+00:00/PT6H", value: 102400 }
+// We expand every layer onto an hourly UTC timeline (repeating the value
+// across its duration), then merge layers into one hourly record per hour.
+// That gives us paired wind-speed/wind-direction (needed for crosswind) and
+// an hourly drill-down for the UI, not just daily averages.
+const MAX_EXPAND_HOURS = 24; // gridpoint durations are normally <= 12h; this is a safety cap
+
+function parseIsoDurationHours(duration) {
+  const match = duration.match(/^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?$/);
+  if (!match) return 1;
+  const [, days, hours, minutes] = match;
+  return (Number(days || 0) * 24) + Number(hours || 0) + (Number(minutes || 0) / 60);
+}
+
+function expandToHourly(values) {
+  const map = new Map(); // hourKey (ISO, truncated to hour, UTC) -> value
+  for (const entry of values ?? []) {
+    const [startIso, duration] = entry.validTime.split("/");
+    const start = new Date(startIso);
+    const hours = Math.min(Math.max(Math.round(parseIsoDurationHours(duration)), 1), MAX_EXPAND_HOURS);
+    for (let h = 0; h < hours; h++) {
+      const t = new Date(start.getTime() + h * 3600 * 1000);
+      t.setUTCMinutes(0, 0, 0);
+      map.set(t.toISOString(), entry.value);
+    }
+  }
+  return map;
+}
+
+function localDateKey(isoString, timeZone) {
+  return new Date(isoString).toLocaleDateString("en-CA", { timeZone });
+}
+
+function avg(nums) {
+  const clean = nums.filter((n) => n != null && !Number.isNaN(n));
+  if (!clean.length) return null;
+  return clean.reduce((a, b) => a + b, 0) / clean.length;
+}
+function max(nums) {
+  const clean = nums.filter((n) => n != null && !Number.isNaN(n));
+  if (!clean.length) return null;
+  return Math.max(...clean);
+}
+function min(nums) {
+  const clean = nums.filter((n) => n != null && !Number.isNaN(n));
+  if (!clean.length) return null;
+  return Math.min(...clean);
+}
+
+export async function fetchGridForecast(forecastGridDataUrl, userAgent) {
+  const res = await fetch(forecastGridDataUrl, {
+    headers: { "User-Agent": userAgent, Accept: "application/geo+json" },
+  });
+  if (!res.ok) {
+    throw new HttpError(502, `api.weather.gov gridpoint fetch failed (${res.status})`);
+  }
+  const data = await res.json();
+  return data.properties;
+}
+
+// Builds an hourly timeline (next `days` days) with normalized units:
+// kt for wind, hPa for pressure, ft for ceiling, statute miles for visibility,
+// degrees C for temperature. Any layer a given office doesn't publish is left null.
+export function buildHourlyTimeline(gridProps, days = 7) {
+  const pressureMap = expandToHourly(gridProps.pressure?.values); // Pa
+  const windMap = expandToHourly(gridProps.windSpeed?.values); // km/h
+  const gustMap = expandToHourly(gridProps.windGust?.values); // km/h
+  const dirMap = expandToHourly(gridProps.windDirection?.values); // degrees true
+  const ceilingMap = expandToHourly(gridProps.ceilingHeight?.values); // meters
+  const visMap = expandToHourly(gridProps.visibility?.values); // meters
+  const tempMap = expandToHourly(gridProps.temperature?.values); // degC
+  const popMap = expandToHourly(gridProps.probabilityOfPrecipitation?.values); // %
+  const skyMap = expandToHourly(gridProps.skyCover?.values); // %
+
+  const now = new Date();
+  now.setUTCMinutes(0, 0, 0);
+  const hours = days * 24;
+
+  const timeline = [];
+  for (let h = 0; h < hours; h++) {
+    const t = new Date(now.getTime() + h * 3600 * 1000);
+    const key = t.toISOString();
+
+    const pa = pressureMap.get(key);
+    const wk = windMap.get(key);
+    const gk = gustMap.get(key);
+    const cm = ceilingMap.get(key);
+    const vm = visMap.get(key);
+
+    timeline.push({
+      timeIso: key,
+      pressureHpa: pa != null ? pa / 100 : null,
+      windSpeedKt: wk != null ? wk * 0.539957 : null,
+      windGustKt: gk != null ? gk * 0.539957 : null,
+      windDirDeg: dirMap.get(key) ?? null,
+      ceilingFt: cm != null ? cm * 3.28084 : null,
+      visibilitySm: vm != null ? vm / 1609.34 : null,
+      tempC: tempMap.get(key) ?? null,
+      precipChance: popMap.get(key) ?? null,
+      skyCoverPct: skyMap.get(key) ?? null,
+    });
+  }
+  return timeline;
+}
+
+// Groups the hourly timeline into local calendar days and computes the
+// worst-case / representative numbers Flyday's rating and display need.
+export function summarizeDailyFromTimeline(timeline, timeZone, days = 7) {
+  const todayKey = localDateKey(new Date().toISOString(), timeZone);
+  const todayDate = new Date(`${todayKey}T00:00:00`);
+
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(todayDate);
+    d.setDate(d.getDate() + i);
+    const key = d.toISOString().slice(0, 10);
+
+    const hoursForDay = timeline.filter((h) => localDateKey(h.timeIso, timeZone) === key);
+
+    out.push({
+      date: key,
+      hasData: hoursForDay.some((h) => h.pressureHpa != null || h.windSpeedKt != null),
+      avgPressureHpa: avg(hoursForDay.map((h) => h.pressureHpa)),
+      maxWindKt: max(hoursForDay.map((h) => h.windSpeedKt)),
+      avgWindKt: avg(hoursForDay.map((h) => h.windSpeedKt)),
+      maxGustKt: max(hoursForDay.map((h) => h.windGustKt)),
+      minCeilingFt: min(hoursForDay.map((h) => h.ceilingFt)),
+      minVisibilitySm: min(hoursForDay.map((h) => h.visibilitySm)),
+      maxTempC: max(hoursForDay.map((h) => h.tempC)),
+      maxPrecipChance: max(hoursForDay.map((h) => h.precipChance)),
+      avgSkyCoverPct: avg(hoursForDay.map((h) => h.skyCoverPct)),
+      hourly: hoursForDay.map((h) => ({
+        timeIso: h.timeIso,
+        windSpeedKt: h.windSpeedKt,
+        windGustKt: h.windGustKt,
+        windDirDeg: h.windDirDeg,
+        ceilingFt: h.ceilingFt,
+        visibilitySm: h.visibilityS
