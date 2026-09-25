@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Flyday — 7 day VFR outlook</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="panel-glow" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">✈</span>
+      <span class="brand-name">Flyday</span>
+    </div>
+    <p class="brand-tagline">A 7-day go / no-go outlook for single-engine VFR flying</p>
+  </header>
+
+  <main>
+    <section class="search-row">
+      <form id="search-form" autocomplete="off">
+        <label for="icao">Airport identifier</label>
+        <input id="icao" name="icao" placeholder="KPAO" maxlength="5" required />
+        <button type="submit">Get outlook</button>
+        <button type="button" id="favorite-btn" class="secondary" title="Save this airport">☆ Save</button>
+      </form>
+    </section>
+
+    <div id="favorites" class="favorites hidden" aria-label="Saved airports"></div>
+
+    <details class="thresholds-panel">
+      <summary>Thresholds &amp; runway</summary>
+      <div class="thresholds">
+        <label>
+          Wind under
+          <input id="wind-threshold" type="number" min="1" max="40" value="10" />
+          kt
+        </label>
+        <label>
+          Pressure at/above
+          <input id="pressure-threshold" type="number" min="980" max="1050" value="1020" />
+          hPa
+        </label>
+        <label>
+          Ceiling at/above
+          <input id="ceiling-threshold" type="number" min="500" max="10000" step="500" value="3000" />
+          ft
+        </label>
+        <label>
+          Visibility at/above
+          <input id="visibility-threshold" type="number" min="1" max="10" value="5" />
+          sm
+        </label>
+        <label>
+          Flag pressure falling faster than
+          <input id="pressure-fall-threshold" type="number" min="-10" max="0" value="-3" />
+          hPa/3h
+        </label>
+        <label>
+          Flag gradient tighter than
+          <input id="gradient-threshold" type="number" min="1" max="20" value="6" />
+          hPa/100km
+        </label>
+        <label>
+          Runways at this airport (auto-detected if left blank)
+          <input id="runway-heading" type="text" placeholder="override, e.g. 13/31, 07/25" />
+        </label>
+      </div>
+      <p class="hint">Flyday auto-detects an airport's runways from published FAA/open aviation data - leave this blank and it'll use those, with true headings (no magnetic-variation guessing). Type your own list here (comma-separated, e.g. "13/31, 07/25") to override - useful if a runway's closed, or the airport isn't in that data. Runway info is only ever used in your browser, never sent to the server.</p>
+    </details>
+
+    <p id="status" class="status" role="status"></p>
+
+    <section id="current" class="current hidden">
+      <div class="current-head">
+        <h2 id="station-name">—</h2>
+        <span id="station-meta" class="mono"></span>
+      </div>
+      <div id="notice-banner" class="notice-banner hidden"></div>
+      <div id="metar-row" class="metar-row"></div>
+      <p id="taf-raw" class="mono taf-raw"></p>
+    </section>
+
+    <section id="days" class="days hidden" aria-label="7 day outlook"></section>
+
+    <details class="route-panel">
+      <summary>Compare a route</summary>
+      <form id="route-form" autocomplete="off">
+        <label for="route-icaos">Airports along your route</label>
+        <input id="route-icaos" placeholder="KPAO, KWVI, KMRY" />
+        <button type="submit">Compare</button>
+      </form>
+      <p id="route-status" class="status" role="status"></p>
+      <div id="route-matrix" class="route-matrix hidden"></div>
+    </details>
+
+    <details class="trip-panel">
+      <summary>Plan a specific trip</summary>
+      <form id="trip-form" autocomplete="off">
+        <div class="trip-row">
+          <label for="trip-departure">Departure</label>
+          <input id="trip-departure" placeholder="KPAO" maxlength="5" />
+        </div>
+        <div class="trip-row">
+          <label for="trip-arrival">Arrival</label>
+          <input id="trip-arrival" placeholder="KMRY" maxlength="5" />
+        </div>
+        <div class="trip-row">
+          <label for="trip-day">Day</label>
+          <select id="trip-day"></select>
+        </div>
+        <div class="trip-row">
+          <label for="trip-time">Time</label>
+          <select id="trip-time"></select>
+        </div>
+        <button type="submit">Check trip</button>
+      </form>
+      <p class="hint">Times are each airport's own local time - a departure and arrival airport in different time zones each show their own clock, not a flight-duration estimate.</p>
+      <p id="trip-status" class="status" role="status"></p>
+      <div id="trip-result" class="trip-result hidden"></div>
+    </details>
+
+    <details class="progchart-panel">
+      <summary>Prog charts</summary>
+      <div class="progchart-controls">
+        <label>
+          Type
+          <select id="progchart-type">
+            <option value="sfc">Surface</option>
+            <option value="clouds">Clouds</option>
+          </select>
+        </label>
+        <label>
+          Forecast hour
+          <select id="progchart-hour">
+            <option value="03">+3h</option>
+            <option value="06" selected>+6h</option>
+            <option value="09">+9h</option>
+            <option value="12">+12h</option>
+            <option value="15">+15h</option>
+            <option value="18">+18h</option>
+          </select>
+        </label>
+        <label>
+          Region
+          <select id="progchart-region">
+            <option value="auto" selected>Auto (near this airport)</option>
+            <option value="us">Full US</option>
+            <option value="ne">Northeast</option>
+            <option value="e">East</option>
+            <option value="se">Southeast</option>
+            <option value="nc">North Central</option>
+            <option value="c">Central</option>
+            <option value="sc">South Central</option>
+            <option value="nw">Northwest</option>
+            <option value="w">West</option>
+            <option value="sw">Southwest</option>
+          </select>
+        </label>
+      </div>
+      <img id="progchart-img" class="progchart-img" alt="Aviation Weather Center forecast graphic" loading="lazy" />
+      <p class="hint">Official Aviation Weather Center graphics (Aviation Surface/Clouds Forecast, part of the GFA product) - loaded directly from aviationweather.gov. The region shown is an approximate guess based on the airport's location; pick a different one above if it looks off.</p>
+    </details>
+
+    <section class="legend">
+      <h3>How a day (and each hour) gets rated</h3>
+      <p>Each day card shows two grades - <strong>Day</strong> and <strong>Night</strong> - split at civil twilight (the same boundary the FAA uses to define "night" for logging purposes, roughly 25-30 minutes before sunrise and after sunset). Each grade is whichever rating - Good, Marginal, or Bad - shows up most often among that period's individual hours, not the single worst hour. A brief rough patch surrounded by mostly-Good hours won't by itself drag the whole period down; a tie between two ratings breaks toward the more cautious one.</p>
+      <p>Each hour's own rating comes from a checklist modeled on a standard GA "good flying weather" reference — surface wind, gust spread, crosswind, visibility, ceiling, dew point spread, pressure pattern, precipitation, TAF trend, and convection. Each item is Green, Yellow, or Red. An hour's overall rating isn't just "worst item wins" - a single stray Red on a soft signal like wind or gust spread, surrounded by otherwise-Green items, reads as Marginal rather than Bad. But a handful of items (ceiling, visibility, pressure pattern, precipitation, TAF-flagged hazards, icing, convection, and crosswind) are treated as critical: a Red on any one of those is a real go/no-go stop that good wind and pressure elsewhere can't outweigh. Multiple independent problems, even non-critical ones, still add up to Bad.</p>
+      <ul>
+        <li><span class="dot good"></span> <strong>Good</strong> — most hours in that period are Good</li>
+        <li><span class="dot marginal"></span> <strong>Marginal</strong> — most hours have a caution flag or two, but nothing serious enough to call it Bad</li>
+        <li><span class="dot bad"></span> <strong>Bad</strong> — most hours have a critical item at Red (ceiling, visibility, pressure pattern, precipitation, a TAF-flagged hazard, icing, convection, or crosswind beyond every runway), or multiple independent problems stacking up together</li>
+        <li><span class="dot unknown"></span> <strong>Unknown</strong> — no hours in that period had data yet (rare, usually day 7)</li>
+      </ul>
+      <p>The "Full checklist" table on each day still shows a separate, detailed worst-case breakdown across daytime hours only (overnight conditions never affect it) - useful for seeing exactly *why* a day looks the way it does, alongside the at-a-glance Day/Night grades above.</p>
+      <p>Below the hour strip, a second row shows the official <strong>flight category</strong> straight from the TAF - VFR (green), MVFR (blue), IFR (red), and LIFR (pink), the same colors used on sectionals and every other flight-planning app. This is a different thing from Flyday's own Good/Marginal/Bad rating above it: the flight category is the TAF's own forecast, shown only where the TAF actually reaches (roughly the next 24-30 hours) - gray means the TAF doesn't cover that hour, not that conditions are fine. Each day also calls out its <strong>best time to fly</strong>: the longest stretch of daytime hours sharing whichever rating is best available that day.</p>
+      <p>Turbulence, icing, and convection are checked against real current AIRMET/SIGMET/convective SIGMET data for the airport's location, not guessed - but only for roughly the next 24 hours, since those products are short-fuse and can't meaningfully forecast day 5 of a 7-day outlook. Beyond that window (or if the check fails), those rows fall back to a coarser proxy or show <strong>N/A</strong>. Ceiling comes from the real METAR for right now, and from the NWS's own hourly forecast (the same data behind weather.gov's Hourly Weather Graph) for the rest of the week - a real forecaster-reviewed product, not a raw model guess. If a given hour has no ceiling entry at all, that's shown as <strong>N/A</strong> - it means the forecast didn't cover that detail, not that the sky is clear. This is "ceiling" in the proper sense too: the base of the lowest broken/overcast layer (or vertical visibility into an obscuration), not just any cloud base - a forecast of scattered clouds alone doesn't count as a ceiling. As with anything this far out, treat days 4-7 as good for picking a promising day, not for counting on a specific number - and cross-check against current METARs and the TAF as the day gets closer. A few rows — fronts (actual position), cloud type/vertical development, PIREP ride reports, and winds aloft — are still shown as <strong>N/A</strong>: there's no free real-time data source Flyday can reach for those, so it says so rather than guessing. Check those separately in a full preflight briefing.</p>
+      <p class="disclaimer">
+        Flyday is a planning aid built on the NWS 7-day gridpoint forecast (pressure, wind, ceiling,
+        visibility, temperature, dew point, ice accumulation, and a nearby gridpoint used to estimate
+        pressure gradient) and aviationweather.gov METAR/TAF (current conditions, near-term flight
+        category). The gradient reading is a proxy, not a hand-analyzed surface chart. It is not a
+        substitute for an official preflight weather briefing — always check current METARs, TAFs,
+        AIRMETs/SIGMETs, PIREPs, and NOTAMs before you fly.
+      </p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
